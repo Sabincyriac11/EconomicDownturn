@@ -1,0 +1,212 @@
+title: "Sectoral contributions to Germany's economic downturn in 2024"
+author: "Sabin Cyriac"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Introduction
+
+Germany’s economy experienced a contraction in 2024, signaling disruptions across various sectors. In the context of global economic instability, understanding which sectors were most responsible for this downturn can inform better policymaking and crisis response.
+
+This project aims to analyze Germany’s sector-wise GDP composition using time-series data. The focus is to quantify each sector’s contribution to the overall economic contraction, using descriptive trends and regression modeling.
+
+#Objective
+
+*To identify the key economic sectors responsible for Germany's 2024 GDP contraction.
+
+*To use sectoral GVA data and perform a regression analysis on GDP.
+
+*To create visualizations of trends over time using R.
+
+#Data source
+All data is sourced from Eurostat, specifically:
+
+Quarterly GDP data (namq_10_gdp)
+
+Sectoral Gross Value Added data (namq_10_a10)
+
+#Methodology
+
+Load GDP and sectoral GVA data from Eurostat using R.
+
+Clean and merge data into a unified format.
+
+Visualize trends to explore changes over time.
+
+Use regression analysis to determine sectoral impact on GDP.
+
+Interpret results and conclude on sectoral contributions.
+
+
+#Data collection
+ 
+```{r}
+# Set Eurostat options
+options(eurostat_cache = FALSE)
+options(eurostat_time_format = "date")
+
+# Load necessary libraries
+library(eurostat)
+library(dplyr)
+
+# Download full quarterly GDP data (no filtering here)
+gdp_raw <- get_eurostat("namq_10_gdp", time_format = "date")
+
+# Filter for Germany only
+gdp_de <- gdp_raw %>% filter(geo == "DE")
+
+# Download full quarterly GVA data by sector
+gva_raw <- get_eurostat("namq_10_a10", time_format = "date")
+
+# Filter for Germany only
+gva_de <- gva_raw %>% filter(geo == "DE")
+
+
+  # View the first few rows in R Markdown output
+head(gdp_de)
+
+
+```
+
+```{r}
+library(dplyr)
+
+gdp_filtered <- gdp_raw %>%
+  filter(
+    geo == "DE",
+    na_item == "B1G",
+    unit == "CLV10_MEUR",
+    s_adj == "SCA",           # or "SA", depending on data
+    TIME_PERIOD >= as.Date("2020-01-01") & TIME_PERIOD <= as.Date("2024-12-31")
+  )
+#show sample
+head(gdp_filtered)
+
+
+
+```
+
+```{r}
+
+gva_filtered <- gva_de %>%
+  filter(
+    geo == "DE",
+    unit == "CLV10_MEUR",
+    s_adj == "SCA",  
+    TIME_PERIOD >= as.Date("2020-01-01") & TIME_PERIOD <= as.Date("2024-12-31")
+  ) %>%
+  select(TIME_PERIOD, nace_r2, values)
+
+head(gva_filtered)
+
+
+
+```
+
+
+
+```{r}
+#Reshapin GVA data
+library(tidyr)
+
+gva_wide <- gva_filtered %>%
+  pivot_wider(names_from = nace_r2, values_from = values)
+head(gva_wide)
+
+```
+
+```{r}
+#Join gdp and gva datasets
+
+gdp_for_merge <- gdp_filtered %>%
+  select(TIME_PERIOD, gdp = values)
+
+merged_data <- inner_join(gdp_for_merge, gva_wide, by = "TIME_PERIOD")
+head(merged_data)
+
+```
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# Pivot all sector columns into long format
+merged_long <- merged_data %>%
+  pivot_longer(
+    cols = -c(TIME_PERIOD, gdp),
+    names_to  = "Sector",
+    values_to = "Value"
+  )
+
+# Plot
+ggplot(merged_long, aes(x = TIME_PERIOD, y = Value, color = Sector)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Quarterly GVA by Sector (2020–2024)",
+    x     = "Quarter",
+    y     = "GVA (CLV10_MEUR)",
+    color = "Sector"
+  ) +
+  theme_minimal()
+
+
+  
+
+
+```
+```{r}
+#Regression analysis
+
+# Remove rows with NA
+regression_data <- na.omit(merged_data)
+
+# Linear regression: GDP ~ all sectors
+model <- lm(gdp ~ ., data = regression_data %>% select(-TIME_PERIOD))
+
+# View regression summary
+summary(model)
+
+```
+```{r}
+#Results
+# Show just the key parts of the regression summary
+summary(model)
+library(broom)
+
+coef_tbl <- tidy(model) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(across(.cols = c(estimate, std.error, p.value), ~ round(.x, 3)))
+
+knitr::kable(coef_tbl,
+             caption = "Table 1: Sectoral GVA Coefficients Predicting GDP",
+             col.names = c("Sector", "Estimate", "Std. Error", "t value", "p value"))
+
+```
+#Conclusion
+
+Manufacturing (C) and Trade & Transport (G–I) emerged with the largest positive, highly significant coefficients—signifying their dominant roles in driving GDP fluctuations during 2024.
+
+Construction (F) displayed a small negative coefficient, indicating that its contraction exerted a measurable drag on overall output.
+
+Other sectors (Agriculture, ICT, Finance, Public Services) showed smaller, often non-significant effects, suggesting they played relatively stabilizing or neutral roles.
+
+
+#Policy Implications:
+
+Support manufacturing and logistics through targeted subsidies or infrastructure investment to bolster recovery.
+
+Monitor the construction cycle, perhaps via low-interest financing or regulatory relief, to mitigate its drag on growth.
+
+#Limitations & Next Steps:
+
+The model omits macro-factors (inflation, energy prices) that also impact GDP.
+
+Future work could expand the period, include lagged sectoral effects, or apply panel techniques across EU countries.
+
+
+
